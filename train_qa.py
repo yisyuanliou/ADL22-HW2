@@ -6,46 +6,10 @@ from pathlib import Path
 from argparse import ArgumentParser, Namespace
 
 from transformers import AutoTokenizer, AutoModelForMultipleChoice, TrainingArguments, Trainer
-from dataset import contextDataset
+from dataset import QADataset
 
-from dataclasses import dataclass
-from transformers.tokenization_utils_base import PreTrainedTokenizerBase, PaddingStrategy
-from typing import Optional, Union
 import torch
 from utils import load_dataset
-
-@dataclass
-class DataCollatorForMultipleChoice:
-    """
-    Data collator that will dynamically pad the inputs for multiple choice received.
-    """
-
-    tokenizer: PreTrainedTokenizerBase
-    padding: Union[bool, str, PaddingStrategy] = True
-    max_length: Optional[int] = None
-    pad_to_multiple_of: Optional[int] = None
-
-    def __call__(self, features):
-        label_name = "labels"
-        labels = [feature[label_name] for feature in features]
-        batch_size = len(features)
-        num_choices = len(features[0]["input_ids"][0])
-        flattened_features = [
-            [{k: v[0][i] for k, v in feature.items()} for i in range(num_choices)] for feature in features
-        ]
-        flattened_features = sum(flattened_features, [])
-
-        batch = self.tokenizer.pad(
-            flattened_features,
-            padding=self.padding,
-            max_length=self.max_length,
-            pad_to_multiple_of=self.pad_to_multiple_of,
-            return_tensors="pt",
-        )
-
-        batch = {k: v.view(batch_size, num_choices, -1) for k, v in batch.items()}
-        batch["labels"] = torch.tensor(labels, dtype=torch.int64)
-        return batch
 
 def main(args):
     tokenizer = AutoTokenizer.from_pretrained("bert-base-chinese")
@@ -54,8 +18,8 @@ def main(args):
     # load dataset
     context, data = load_dataset(args)
 
-    train_dataset = contextDataset(context, data["train"], tokenizer, args.max_len, 'train')
-    valid_dataset = contextDataset(context, data["valid"], tokenizer, args.max_len, 'valid')
+    train_dataset = QADataset(context, data["train"], tokenizer, args.max_len, 'train')
+    valid_dataset = QADataset(context, data["valid"], tokenizer, args.max_len, 'valid')
 
     training_args = TrainingArguments(
         output_dir=args.ckpt_dir,
