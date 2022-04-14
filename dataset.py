@@ -39,20 +39,11 @@ class contextDataset(Dataset):
             # ]
             sentences = \
                 [self.context[p] for p in examples["paragraphs"]]
-            
-            # print(question_headers)
-            # questions = sum(question_headers, [])
-            # sentences = sum(sentences, [])
-            # print(questions)
+
             tokenized_example = self.tokenizer(question_headers, sentences, padding=True, truncation=True, max_length=self.max_len)
             self.tokenized_examples.append({k: [v[i : i + 4] for i in range(0, len(v), 4)] for k, v in tokenized_example.items()})
-            self.tokenized_examples[-1]['labels'] = examples["paragraphs"].index(examples["relevant"])
-            # print(self.tokenized_examples[-1]['input_ids'])
-            # print(len(self.tokenized_examples[-1]['input_ids']))
-            # exit()
-        # print(len(self.tokenized_examples[0]['attention_mask']))
-        # print(self.tokenized_examples[0]['attention_mask'][0].shape)
-        # exit()
+            self.tokenized_examples[-1]["labels"] = examples["paragraphs"].index(examples["relevant"])
+            
         # return {k: [v[i : i + 4] for i in range(0, len(v), 4)] for k, v in tokenized_examples.items()}
 
     def __len__(self) -> int:

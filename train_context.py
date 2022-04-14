@@ -1,6 +1,7 @@
 import os
 import torch
 import json
+import numpy as np
 from pathlib import Path
 from argparse import ArgumentParser, Namespace
 
@@ -43,7 +44,7 @@ class DataCollatorForMultipleChoice:
 
     def __call__(self, features):
         label_name = "labels"
-        labels = [feature.pop(label_name) for feature in features]
+        labels = [feature[label_name] for feature in features]
         batch_size = len(features)
         num_choices = len(features[0]["input_ids"][0])
         flattened_features = [
@@ -77,11 +78,18 @@ def main(args):
         output_dir=args.ckpt_dir,
         evaluation_strategy="epoch",
         learning_rate=args.lr,
-        per_device_train_batch_size=1,
-        per_device_eval_batch_size=1,
-        num_train_epochs=3,
-        weight_decay=0.01,
+        per_device_train_batch_size=args.batch_size,
+        per_device_eval_batch_size=args.batch_size,
+        num_train_epochs=args.epoch,
+        weight_decay=args.weight_decay,
+        do_train=True
     )
+
+    # Metric
+    def compute_metrics(eval_predictions):
+        predictions, label_ids = eval_predictions
+        preds = np.argmax(predictions, axis=1)
+        return {"accuracy": (preds == label_ids).astype(np.float32).mean().item()}
 
     trainer = Trainer(
         model=model,
@@ -90,6 +98,7 @@ def main(args):
         eval_dataset=valid_dataset,
         tokenizer=tokenizer,
         data_collator=DataCollatorForMultipleChoice(tokenizer=tokenizer),
+        compute_metrics=compute_metrics,
     )
 
     # Training
@@ -99,25 +108,22 @@ def main(args):
             checkpoint = training_args.resume_from_checkpoint
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_model()  # Saves the tokenizer too for easy upload
-        # metrics = train_result.metrics
+        metrics = train_result.metrics
+        print(metrics)
 
-        # max_train_samples = (
-        #     data_args.max_train_samples if data_args.max_train_samples is not None else len(train_dataset)
-        # )
-        # metrics["train_samples"] = min(max_train_samples, len(train_dataset))
-
-        # trainer.log_metrics("train", metrics)
-        # trainer.save_metrics("train", metrics)
-        # trainer.save_state()
+        trainer.log_metrics("train", metrics)
+        trainer.save_metrics("train", metrics)
+        trainer.save_state()
         
     # Evaluation
     if training_args.do_eval:
         metrics = trainer.evaluate()
+        print(metrics)
         # max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
         # metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
 
-        # trainer.log_metrics("eval", metrics)
-        # trainer.save_metrics("eval", metrics)
+        trainer.log_metrics("eval", metrics)
+        trainer.save_metrics("eval", metrics)
 
 
 def parse_args() -> Namespace:
@@ -144,17 +150,13 @@ def parse_args() -> Namespace:
     # data
     parser.add_argument("--max_len", type=int, default=512)
 
-    # model
-    parser.add_argument("--hidden_size", type=int, default=512)
-    parser.add_argument("--num_layers", type=int, default=3)
-    parser.add_argument("--dropout", type=float, default=0.1)
-    parser.add_argument("--bidirectional", type=bool, default=True)
-
     # optimizer
     parser.add_argument("--lr", type=float, default=5e-5)
+    parser.add_argument("--weight_decay", type=float, default=1e-4)
+    parser.add_argument("--epoch", type=float, default=3)
 
     # data loader
-    parser.add_argument("--batch_size", type=int, default=16)
+    parser.add_argument("--batch_size", type=int, default=3)
 
     # training
     parser.add_argument(
