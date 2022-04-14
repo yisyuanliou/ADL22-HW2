@@ -38,14 +38,14 @@ class QADataset(Dataset):
             )
 
             offset = tokenized_example.pop("offset_mapping")
-            answers = examples["answers"]
+            answers = examples["answer"]
             start_positions = []
             end_positions = []
 
             # for i, offset in enumerate(offset_mapping):
             answer = answers
-            start_char = answer["start"][0]
-            end_char = answer["start"][0] + len(answer["text"][0])
+            start_char = answer["start"]
+            end_char = answer["start"] + len(answer["text"])
             sequence_ids = tokenized_example.sequence_ids()
 
             # Find the start and end of the context

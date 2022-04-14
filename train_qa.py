@@ -5,7 +5,14 @@ import numpy as np
 from pathlib import Path
 from argparse import ArgumentParser, Namespace
 
-from transformers import AutoTokenizer, AutoModelForMultipleChoice, TrainingArguments, Trainer
+from transformers import (
+    AutoTokenizer, 
+    AutoModelForQuestionAnswering, 
+    TrainingArguments, 
+    Trainer, 
+    DefaultDataCollator, 
+    EvalPrediction
+)
 from dataset import QADataset
 
 import torch
@@ -13,13 +20,15 @@ from utils import load_dataset
 
 def main(args):
     tokenizer = AutoTokenizer.from_pretrained("bert-base-chinese")
-    model = AutoModelForMultipleChoice.from_pretrained("bert-base-chinese")
+    model = AutoModelForQuestionAnswering.from_pretrained("bert-base-chinese")
 
     # load dataset
     context, data = load_dataset(args)
 
-    train_dataset = QADataset(context, data["train"], tokenizer, args.max_len, 'train')
-    valid_dataset = QADataset(context, data["valid"], tokenizer, args.max_len, 'valid')
+    train_dataset = QADataset(context, data["train"], tokenizer, args.max_len)
+    valid_dataset = QADataset(context, data["valid"], tokenizer, args.max_len)
+
+    data_collator = DefaultDataCollator()
 
     training_args = TrainingArguments(
         output_dir=args.ckpt_dir,
@@ -33,10 +42,8 @@ def main(args):
     )
 
     # Metric
-    def compute_metrics(eval_predictions):
-        predictions, label_ids = eval_predictions
-        preds = np.argmax(predictions, axis=1)
-        return {"accuracy": (preds == label_ids).astype(np.float32).mean().item()}
+    def compute_metrics(p: EvalPrediction):
+        return metric.compute(predictions=p.predictions, references=p.label_ids)
 
     trainer = Trainer(
         model=model,
@@ -44,7 +51,7 @@ def main(args):
         train_dataset=train_dataset,
         eval_dataset=valid_dataset,
         tokenizer=tokenizer,
-        data_collator=DataCollatorForMultipleChoice(tokenizer=tokenizer),
+        data_collator=data_collator,
         compute_metrics=compute_metrics,
     )
 
@@ -98,7 +105,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--max_len", type=int, default=512)
 
     # optimizer
-    parser.add_argument("--lr", type=float, default=5e-5)
+    parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--epoch", type=float, default=3)
 
