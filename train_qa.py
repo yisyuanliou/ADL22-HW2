@@ -5,6 +5,7 @@ import numpy as np
 from pathlib import Path
 from argparse import ArgumentParser, Namespace
 
+from trainer_qa import QuestionAnsweringTrainer
 from transformers import (
     AutoTokenizer, 
     AutoModelForQuestionAnswering, 
@@ -14,10 +15,31 @@ from transformers import (
     EvalPrediction
 )
 from dataset import QADataset
+from datasets import load_metric
 
 import torch
 from utils import load_dataset
+from utils_qa import postprocess_qa_predictions
 
+question_column_name = "question"
+answer_column_name = "answer"
+
+# Post-processing:
+def post_processing_function(examples, features, predictions, stage="eval"):
+    # Post-processing: we match the start logits and end logits to answers in the original context.
+    predictions = postprocess_qa_predictions(
+        examples=examples,
+        features=features,
+        predictions=predictions,
+        output_dir="./result",
+        prefix=stage,
+    )
+    # Format the result to the format the metric expects.
+    formatted_predictions = [{"id": k, "prediction_text": v} for k, v in predictions.items()]
+
+    references = [{"id": ex["id"], "answers": ex[answer_column_name]} for ex in examples]
+    return EvalPrediction(predictions=formatted_predictions, label_ids=references)
+        
 def main(args):
     tokenizer = AutoTokenizer.from_pretrained("bert-base-chinese")
     model = AutoModelForQuestionAnswering.from_pretrained("bert-base-chinese")
@@ -40,18 +62,22 @@ def main(args):
         weight_decay=args.weight_decay,
         do_train=True
     )
+    metric = load_metric("squad_v2")
 
     # Metric
     def compute_metrics(p: EvalPrediction):
+        print(p.predictions)
+        print(p.label_ids)
         return metric.compute(predictions=p.predictions, references=p.label_ids)
 
-    trainer = Trainer(
+    trainer = QuestionAnsweringTrainer(
         model=model,
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=valid_dataset,
         tokenizer=tokenizer,
         data_collator=data_collator,
+        post_process_function=post_processing_function,
         compute_metrics=compute_metrics,
     )
 
@@ -59,6 +85,7 @@ def main(args):
     if training_args.do_train:
         checkpoint = None
         if training_args.resume_from_checkpoint is not None:
+            print(training_args.resume_from_checkpoint)
             checkpoint = training_args.resume_from_checkpoint
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_model()  # Saves the tokenizer too for easy upload
@@ -92,7 +119,7 @@ def parse_args() -> Namespace:
         "--ckpt_dir",
         type=Path,
         help="Directory to save the model file.",
-        default="./ckpt/context/",
+        default="./ckpt/qa/",
     )
     parser.add_argument(
         "-m", "--model",
