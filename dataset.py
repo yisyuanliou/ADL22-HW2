@@ -25,6 +25,7 @@ class QADataset(Dataset):
         self.split = split
         if self.split == 'train':
             self.prepare_train_features()
+            # self.preprocess()
         else:
             self.prepare_validation_features()
         # self.preprocess()
@@ -113,14 +114,17 @@ class QADataset(Dataset):
             # help us compute the start_positions and end_positions.
             offset_mapping = tokenized_examples.pop("offset_mapping")
 
-            # Let's label those examples!
-            tokenized_examples["start_positions"] = []
-            tokenized_examples["end_positions"] = []
-
             answers = examples['answer']
-            for i, offsets in enumerate(offset_mapping):
+            for i, offsets in enumerate(offset_mapping[:1]):
+                tokenized_example = {}
+                # Let's label those examples!
+                tokenized_example["start_positions"] = []
+                tokenized_example["end_positions"] = []
+
                 # We will label impossible answers with the index of the CLS token.
                 input_ids = tokenized_examples["input_ids"][i]
+                tokenized_example["input_ids"] = input_ids
+                tokenized_example["attention_mask"] = tokenized_examples["attention_mask"][i]
                 cls_index = input_ids.index(self.tokenizer.cls_token_id)
 
                 # Grab the sequence corresponding to that example (to know what is the context and what is the question).
@@ -142,20 +146,20 @@ class QADataset(Dataset):
 
                 # Detect if the answer is out of the span (in which case this feature is labeled with the CLS index).
                 if not (offsets[token_start_index][0] <= start_char and offsets[token_end_index][1] >= end_char):
-                    tokenized_examples["start_positions"].append(cls_index)
-                    tokenized_examples["end_positions"].append(cls_index)
+                    tokenized_example["start_positions"].append(cls_index)
+                    tokenized_example["end_positions"].append(cls_index)
                 else:
                     # Otherwise move the token_start_index and token_end_index to the two ends of the answer.
                     # Note: we could go after the last offset if the answer is the last word (edge case).
                     while token_start_index < len(offsets) and offsets[token_start_index][0] <= start_char:
                         token_start_index += 1
-                    tokenized_examples["start_positions"].append(token_start_index - 1)
+                    tokenized_example["start_positions"].append(token_start_index - 1)
                     while offsets[token_end_index][1] >= end_char:
                         token_end_index -= 1
-                    tokenized_examples["end_positions"].append(token_end_index + 1)
+                    tokenized_example["end_positions"].append(token_end_index + 1)
                     # print(self.tokenizer.decode(tokenized_examples["input_ids"][i][token_start_index-1: token_end_index+2]))
                     # print(answers["text"])
-                self.inputs.append(tokenized_examples)
+                self.inputs.append(tokenized_example)
 
 
      # Validation preprocessing
@@ -187,28 +191,32 @@ class QADataset(Dataset):
 
             # For evaluation, we will need to convert our predictions to substrings of the context, so we keep the
             # corresponding example_id and we will store the offset mappings.
-            tokenized_examples["example_id"] = []
+            # tokenized_example = {}
+            # tokenized_example["example_id"] = []
 
             for i in range(len(tokenized_examples["input_ids"])):
+                tokenized_example = {}
+                tokenized_example["example_id"] = []
+                tokenized_example["input_ids"] = tokenized_examples["input_ids"]
+                tokenized_example["attention_mask"] = tokenized_examples["attention_mask"][i]
+
                 # Grab the sequence corresponding to that example (to know what is the context and what is the question).
-                sequence_ids = tokenized_examples.sequence_ids()
+                sequence_ids = tokenized_examples.sequence_ids(i)
                 context_index = 1
 
                 # One example can give several spans, this is the index of the example containing this span of text.
                 # sample_index = sample_mapping
-                tokenized_examples["example_id"].append(examples["id"])
+                tokenized_example["example_id"].append(examples["id"])
 
                 # Set to None the offset_mapping that are not part of the context so it's easy to determine if a token
                 # position is part of the context or not.
-                tokenized_examples["offset_mapping"] = [
+                tokenized_example["offset_mapping"] = [
                     (o if sequence_ids[k] == context_index else None)
                     for k, o in enumerate(tokenized_examples["offset_mapping"])
                 ]
-                self.inputs.append(tokenized_examples)
-                self.inputs[-1]['id'] = examples['id']
-                self.inputs[-1]['context'] = self.context[examples["relevant"]]
-
-        # return tokenized_examples
+                self.inputs.append(tokenized_example)
+                self.inputs[-1]["id"] = examples["id"]
+                self.inputs[-1]["context"] = self.context[examples["relevant"]]
 
     def __len__(self):
         return len(self.inputs)
