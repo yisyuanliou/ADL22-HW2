@@ -24,7 +24,7 @@ from utils_qa import postprocess_qa_predictions
 question_column_name = "question"
 answer_column_name = "answer"
 
-# Post-processing:
+# # Post-processing:
 def post_processing_function(examples, features, predictions, stage="eval"):
     # Post-processing: we match the start logits and end logits to answers in the original context.
     predictions = postprocess_qa_predictions(
@@ -67,6 +67,8 @@ def main(args):
     # Metric
     def compute_metrics(p: EvalPrediction):
         print(p.predictions)
+        # print(p.predictions.shape)
+        # print(np.argmax(p.predictions, axis=1))
         print(p.label_ids)
         return metric.compute(predictions=p.predictions, references=p.label_ids)
 
@@ -75,6 +77,7 @@ def main(args):
         args=training_args,
         train_dataset=train_dataset,
         eval_dataset=valid_dataset,
+        # eval_examples=data["valid"],
         tokenizer=tokenizer,
         data_collator=data_collator,
         post_process_function=post_processing_function,

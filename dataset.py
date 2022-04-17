@@ -17,12 +17,17 @@ from torch.utils.data import Dataset
 }
 """
 class QADataset(Dataset):
-    def __init__(self, context, data, tokenizer, max_len):
+    def __init__(self, context, data, tokenizer, max_len, split):
         self.context = context
         self.data = data
         self.tokenizer = tokenizer
         self.max_len = max_len
-        self.preprocess()
+        self.split = split
+        if self.split == 'train':
+            self.prepare_train_features()
+        else:
+            self.prepare_validation_features()
+        # self.preprocess()
 
     def preprocess(self):
         self.inputs = []
@@ -79,47 +84,49 @@ class QADataset(Dataset):
 
 
     # Training preprocessing
-    def prepare_train_features(self, examples):
-        # Some of the questions have lots of whitespace on the left, which is not useful and will make the
-        # truncation of the context fail (the tokenized question will take a lots of space). So we remove that
-        # left whitespace
-        examples["question"] = examples["question"].lstrip()
+    def prepare_train_features(self):
+        self.inputs = []
+        for examples in self.data:
+            # Some of the questions have lots of whitespace on the left, which is not useful and will make the
+            # truncation of the context fail (the tokenized question will take a lots of space). So we remove that
+            # left whitespace
+            examples["question"] = examples["question"].lstrip()
 
-        # Tokenize our examples with truncation and maybe padding, but keep the overflows using a stride. This results
-        # in one example possible giving several features when a context is long, each of those features having a
-        # context that overlaps a bit the context of the previous feature.
-        tokenized_examples = self.tokenizer(
-            examples["question"],
-            self.context[examples["relevant"]],
-            truncation="only_second",
-            max_length=self.max_len,
-            # stride=data_args.doc_stride,
-            return_overflowing_tokens=True,
-            return_offsets_mapping=True,
-            padding="max_length"
-        )
+            # Tokenize our examples with truncation and maybe padding, but keep the overflows using a stride. This results
+            # in one example possible giving several features when a context is long, each of those features having a
+            # context that overlaps a bit the context of the previous feature.
+            tokenized_examples = self.tokenizer(
+                examples["question"],
+                self.context[examples["relevant"]],
+                truncation="only_second",
+                max_length=self.max_len,
+                # stride=data_args.doc_stride,
+                return_overflowing_tokens=True,
+                return_offsets_mapping=True,
+                padding="max_length"
+            )
 
-        # Since one example might give us several features if it has a long context, we need a map from a feature to
-        # its corresponding example. This key gives us just that.
-        sample_mapping = tokenized_examples.pop("overflow_to_sample_mapping")
-        # The offset mappings will give us a map from token to character position in the original context. This will
-        # help us compute the start_positions and end_positions.
-        offset_mapping = tokenized_examples.pop("offset_mapping")
+            # Since one example might give us several features if it has a long context, we need a map from a feature to
+            # its corresponding example. This key gives us just that.
+            sample_mapping = tokenized_examples.pop("overflow_to_sample_mapping")
+            # The offset mappings will give us a map from token to character position in the original context. This will
+            # help us compute the start_positions and end_positions.
+            offset_mapping = tokenized_examples.pop("offset_mapping")
 
-        # Let's label those examples!
-        tokenized_examples["start_positions"] = []
-        tokenized_examples["end_positions"] = []
+            # Let's label those examples!
+            tokenized_examples["start_positions"] = []
+            tokenized_examples["end_positions"] = []
 
-        for i, offsets in enumerate(offset_mapping):
+            # for i, offsets in enumerate(offset_mapping):
             # We will label impossible answers with the index of the CLS token.
-            input_ids = tokenized_examples["input_ids"][i]
+            input_ids = tokenized_examples["input_ids"]
             cls_index = input_ids.index(self.tokenizer.cls_token_id)
 
             # Grab the sequence corresponding to that example (to know what is the context and what is the question).
-            sequence_ids = tokenized_examples.sequence_ids(i)
+            sequence_ids = tokenized_examples.sequence_ids()
 
             # One example can give several spans, this is the index of the example containing this span of text.
-            sample_index = sample_mapping[i]
+            sample_index = sample_mapping
             answers = examples['answer'][sample_index]
             # If no answers are given, set the cls_index as answer.
             if len(answers["start"]) == 0:
@@ -153,8 +160,63 @@ class QADataset(Dataset):
                     while offsets[token_end_index][1] >= end_char:
                         token_end_index -= 1
                     tokenized_examples["end_positions"].append(token_end_index + 1)
+            self.inputs.append(tokenized_examples)
 
-        return tokenized_examples
+        # return tokenized_examples
+
+
+     # Validation preprocessing
+    
+    def prepare_validation_features(self):
+        self.inputs = []
+        for examples in self.data:
+            # Some of the questions have lots of whitespace on the left, which is not useful and will make the
+            # truncation of the context fail (the tokenized question will take a lots of space). So we remove that
+            # left whitespace
+            examples['question'] = examples['question'].lstrip()
+
+            # Tokenize our examples with truncation and maybe padding, but keep the overflows using a stride. This results
+            # in one example possible giving several features when a context is long, each of those features having a
+            # context that overlaps a bit the context of the previous feature.
+            tokenized_examples = tokenizer(
+                examples["question"],
+                self.context[examples["relevant"]],
+                truncation="only_second",
+                max_length=max_seq_length,
+                # stride=data_args.doc_stride,
+                return_overflowing_tokens=True,
+                return_offsets_mapping=True,
+                padding=self.max_len,
+            )
+
+            # Since one example might give us several features if it has a long context, we need a map from a feature to
+            # its corresponding example. This key gives us just that.
+            sample_mapping = tokenized_examples.pop("overflow_to_sample_mapping")
+
+            # For evaluation, we will need to convert our predictions to substrings of the context, so we keep the
+            # corresponding example_id and we will store the offset mappings.
+            tokenized_examples["example_id"] = []
+
+            # for i in range(len(tokenized_examples["input_ids"])):
+            # Grab the sequence corresponding to that example (to know what is the context and what is the question).
+            sequence_ids = tokenized_examples.sequence_ids()
+            context_index = 1 if pad_on_right else 0
+
+            # One example can give several spans, this is the index of the example containing this span of text.
+            sample_index = sample_mapping
+            tokenized_examples["example_id"].append(examples["id"][sample_index])
+
+            # Set to None the offset_mapping that are not part of the context so it's easy to determine if a token
+            # position is part of the context or not.
+            tokenized_examples["offset_mapping"] = [
+                (o if sequence_ids[k] == context_index else None)
+                for k, o in enumerate(tokenized_examples["offset_mapping"])
+            ]
+            self.inputs.append(tokenized_examples)
+            self.inputs[-1]['id'] = examples['id']
+            self.inputs[-1]['context'] = self.context[examples["relevant"]]
+
+        # return tokenized_examples
 
     def __len__(self):
         return len(self.inputs)
