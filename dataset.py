@@ -17,72 +17,18 @@ from torch.utils.data import Dataset
 }
 """
 class QADataset(Dataset):
-    def __init__(self, context, data, tokenizer, max_len, split):
+    def __init__(self, context, data, tokenizer, max_len, split, preprocess=True):
         self.context = context
         self.data = data
         self.tokenizer = tokenizer
         self.max_len = max_len
         self.split = split
-        if self.split == 'train':
-            self.prepare_train_features()
-            # self.preprocess()
-        else:
-            self.prepare_validation_features()
-        # self.preprocess()
-
-    def preprocess(self):
-        self.inputs = []
-        for examples in self.data:
-            questions = examples["question"].strip()
-            tokenized_example = self.tokenizer(
-                questions,
-                self.context[examples["relevant"]],
-                max_length=self.max_len,
-                truncation="only_second",
-                return_offsets_mapping=True,
-                padding="max_length",
-            )
-
-            offset = tokenized_example.pop("offset_mapping")
-            answers = examples["answer"]
-            start_positions = []
-            end_positions = []
-
-            # for i, offset in enumerate(offset_mapping):
-            answer = answers
-            start_char = answer["start"]
-            end_char = answer["start"] + len(answer["text"])
-            sequence_ids = tokenized_example.sequence_ids()
-
-            # Find the start and end of the context
-            idx = 0
-            while sequence_ids[idx] != 1:
-                idx += 1
-            context_start = idx
-            while sequence_ids[idx] == 1:
-                idx += 1
-            context_end = idx - 1
-
-            # If the answer is not fully inside the context, label it (0, 0)
-            if offset[context_start][0] > end_char or offset[context_end][1] < start_char:
-                start_positions.append(0)
-                end_positions.append(0)
+        self.preprocess = preprocess
+        if self.preprocess:
+            if self.split == 'train':
+                self.prepare_train_features()
             else:
-                # Otherwise it's the start and end token positions
-                idx = context_start
-                while idx <= context_end and offset[idx][0] <= start_char:
-                    idx += 1
-                start_positions.append(idx - 1)
-
-                idx = context_end
-                while idx >= context_start and offset[idx][1] >= end_char:
-                    idx -= 1
-                end_positions.append(idx + 1)
-
-            tokenized_example["start_positions"] = start_positions
-            tokenized_example["end_positions"] = end_positions
-            self.inputs.append(tokenized_example)   
-
+                self.prepare_validation_features()
 
     # Training preprocessing
     def prepare_train_features(self):
@@ -163,6 +109,7 @@ class QADataset(Dataset):
 
 
      # Validation preprocessing
+    
     def prepare_validation_features(self):
         self.inputs = []
         for examples in self.data:
@@ -170,13 +117,14 @@ class QADataset(Dataset):
             # truncation of the context fail (the tokenized question will take a lots of space). So we remove that
             # left whitespace
             examples['question'] = examples['question'].lstrip()
+            context = self.context[examples["relevant"]]
 
             # Tokenize our examples with truncation and maybe padding, but keep the overflows using a stride. This results
             # in one example possible giving several features when a context is long, each of those features having a
             # context that overlaps a bit the context of the previous feature.
             tokenized_examples = self.tokenizer(
                 examples["question"],
-                self.context[examples["relevant"]],
+                context,
                 truncation="only_second",
                 max_length=self.max_len,
                 # stride=data_args.doc_stride,
@@ -197,7 +145,7 @@ class QADataset(Dataset):
             for i in range(len(tokenized_examples["input_ids"])):
                 tokenized_example = {}
                 tokenized_example["example_id"] = []
-                tokenized_example["input_ids"] = tokenized_examples["input_ids"]
+                tokenized_example["input_ids"] = tokenized_examples["input_ids"][i]
                 tokenized_example["attention_mask"] = tokenized_examples["attention_mask"][i]
 
                 # Grab the sequence corresponding to that example (to know what is the context and what is the question).
@@ -212,17 +160,23 @@ class QADataset(Dataset):
                 # position is part of the context or not.
                 tokenized_example["offset_mapping"] = [
                     (o if sequence_ids[k] == context_index else None)
-                    for k, o in enumerate(tokenized_examples["offset_mapping"])
+                    for k, o in enumerate(tokenized_examples["offset_mapping"][i])
                 ]
                 self.inputs.append(tokenized_example)
-                self.inputs[-1]["id"] = examples["id"]
-                self.inputs[-1]["context"] = self.context[examples["relevant"]]
+                # self.inputs[-1]["id"] = examples["id"]
+                # self.inputs[-1]["context"] = context
 
     def __len__(self):
-        return len(self.inputs)
+        if self.preprocess:
+            return len(self.inputs)
+        else:
+            return len(self.data)
 
     def __getitem__(self, index):
-        return self.inputs[index]
+        if self.preprocess:
+            return self.inputs[index]
+        else:
+            return self.data[index]
 
 class contextDataset(Dataset):
     def __init__(self, context, data, tokenizer, max_len, split):
