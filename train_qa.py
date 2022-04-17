@@ -47,8 +47,8 @@ def main(args):
     # load dataset
     context, data = load_dataset(args)
 
-    train_dataset = QADataset(context, data["train"], tokenizer, args.max_len)
-    valid_dataset = QADataset(context, data["valid"], tokenizer, args.max_len)
+    train_dataset = QADataset(context, data["train"], tokenizer, args.max_len, 'train')
+    valid_dataset = QADataset(context, data["valid"], tokenizer, args.max_len, 'valid')
 
     data_collator = DefaultDataCollator()
 
