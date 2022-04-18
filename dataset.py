@@ -140,8 +140,6 @@ class QADataset(Dataset):
 
             # For evaluation, we will need to convert our predictions to substrings of the context, so we keep the
             # corresponding example_id and we will store the offset mappings.
-            # tokenized_example = {}
-            # tokenized_example["example_id"] = []
 
             for i in range(len(tokenized_examples["input_ids"])):
                 tokenized_example = {}
@@ -155,7 +153,8 @@ class QADataset(Dataset):
 
                 # One example can give several spans, this is the index of the example containing this span of text.
                 # sample_index = sample_mapping
-                tokenized_example["example_id"].append(idx)
+                # tokenized_example["example_id"].append(idx)
+                tokenized_example["example_id"].append(examples["id"])
 
                 # Set to None the offset_mapping that are not part of the context so it's easy to determine if a token
                 # position is part of the context or not.

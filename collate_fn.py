@@ -38,3 +38,21 @@ class DataCollatorForMultipleChoice:
         if self.split == "train":
             batch["labels"] = torch.tensor(labels, dtype=torch.int64)
         return batch
+
+@dataclass
+class DataCollatorForQuestionAnswering:
+    """
+    Data collator for quesion answering.
+    """
+
+    def __call__(self, features):
+        first = features[0]
+        batch = {}
+
+        for k, v in first.items():
+            if k not in ("label", "label_ids") and not (None in v) and not isinstance(v[0], str):
+                if isinstance(v, torch.Tensor):
+                    batch[k] = torch.stack([f[k] for f in features])
+                else:
+                    batch[k] = torch.tensor([f[k] for f in features])
+        return batch

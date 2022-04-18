@@ -14,7 +14,7 @@ from transformers import (
     EvalPrediction
 )
 from dataset import QADataset, contextDataset
-from collate_fn import DataCollatorForMultipleChoice
+from collate_fn import DataCollatorForMultipleChoice, DataCollatorForQuestionAnswering
 import torch
 from utils import load_dataset
 from utils_qa import postprocess_qa_predictions
@@ -46,7 +46,7 @@ def main(args):
     context_model = AutoModelForMultipleChoice.from_pretrained(args.context_ckpt_dir)
     test_dataset = contextDataset(context, data["test"], context_tokenizer, args.max_len, 'test')
 
-    tokenizer = AutoTokenizer.from_pretrained(args.qa_ckpt_dir)
+    qa_tokenizer = AutoTokenizer.from_pretrained(args.qa_ckpt_dir)
     qa_model = AutoModelForQuestionAnswering.from_pretrained(args.qa_ckpt_dir)
 
     data_collator = DefaultDataCollator()
@@ -72,8 +72,9 @@ def main(args):
     qa_trainer = QuestionAnsweringTrainer(
         model=qa_model,
         args=training_args,
-        tokenizer=tokenizer,
-        data_collator=data_collator,
+        tokenizer=qa_tokenizer,
+        # data_collator=data_collator,
+        data_collator=DataCollatorForQuestionAnswering(),
         post_process_function=post_processing_function,
     )
 
@@ -83,9 +84,9 @@ def main(args):
         preds = np.argmax(predictions, axis=1)
         print(preds)
 
-        test_features = QADataset(context, data["test"], tokenizer, args.max_len, 'test', relevant=preds)
-        test_examples = QADataset(context, data["test"], tokenizer, args.max_len, 'test', preprocess=False)
-        results = qa_trainer.predict(test_examples, test_features)
+        test_features = QADataset(context, data["test"], qa_tokenizer, args.max_len, 'test', relevant=preds)
+        test_examples = QADataset(context, data["test"], qa_tokenizer, args.max_len, 'test', preprocess=False)
+        results = qa_trainer.predict(test_features, test_examples)
         print(results)
 
 
