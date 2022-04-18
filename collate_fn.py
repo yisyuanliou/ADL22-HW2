@@ -1,3 +1,4 @@
+import copy
 import torch
 from dataclasses import dataclass
 from transformers.tokenization_utils_base import PreTrainedTokenizerBase, PaddingStrategy
@@ -16,7 +17,7 @@ class DataCollatorForMultipleChoice:
     pad_to_multiple_of: Optional[int] = None
 
     def __call__(self, features):
-        features_cpy = features.copy()
+        features_cpy = copy.deepcopy(features)
         if self.split == "train":
             label_name = "labels"
             labels = [feature.pop(label_name) for feature in features_cpy]

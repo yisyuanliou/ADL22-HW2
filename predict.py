@@ -1,4 +1,6 @@
 import csv
+import os
+import json
 import torch
 import numpy as np
 from pathlib import Path
@@ -11,26 +13,25 @@ from transformers import (
     AutoModelForMultipleChoice,
     TrainingArguments, 
     Trainer, 
-    EvalPrediction
 )
 from dataset import QADataset, contextDataset
-from datasets import load_metric
 from collate_fn import DataCollatorForMultipleChoice, DataCollatorForQuestionAnswering
 import torch
-from utils import load_dataset
 from utils_qa import postprocess_qa_predictions
 
 question_column_name = "question"
 answer_column_name = "answer"
 
-# Metric
-metric = load_metric("squad_v2")
-def compute_metrics(p: EvalPrediction):
-    print(p.predictions)
-    # print(p.predictions.shape)
-    # print(np.argmax(p.predictions, axis=1))
-    print(p.label_ids)
-    return metric.compute(predictions=p.predictions, references=p.label_ids)
+def load_dataset(args):
+    context_data_path = os.path.join(args.context_dir)
+    with  open(context_data_path, 'r', encoding="utf-8") as f:
+        context = json.load(f)
+    
+    data = {}
+    data_paths = os.path.join(args.test_dir)
+    with  open(data_paths, 'r', encoding="utf-8") as f:
+        data["test"] = json.load(f)
+    return context, data
 
 def main(args):
     # load dataset
@@ -93,7 +94,13 @@ def main(args):
 def parse_args() -> Namespace:
     parser = ArgumentParser()
     parser.add_argument(
-        "--data_dir",
+        "--context_dir",
+        type=Path,
+        help="Directory to the dataset.",
+        default="./data/",
+    )
+    parser.add_argument(
+        "--test_dir",
         type=Path,
         help="Directory to the dataset.",
         default="./data/",

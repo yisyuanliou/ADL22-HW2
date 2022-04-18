@@ -12,7 +12,6 @@ def load_dataset(args):
         context = json.load(f)
     
     data = {}
-    data_paths = {split: os.path.join(args.data_dir, f"{split}.json") for split in SPLITS}
     for split in SPLITS:
         data_paths = os.path.join(args.data_dir, f"{split}.json")
         with  open(data_paths, 'r', encoding="utf-8") as f:
