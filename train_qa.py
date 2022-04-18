@@ -10,9 +10,9 @@ from transformers import (
     AutoTokenizer, 
     AutoModelForQuestionAnswering, 
     TrainingArguments, 
-    DefaultDataCollator, 
     EvalPrediction
 )
+from collate_fn import DataCollatorForQuestionAnswering
 from dataset import QADataset
 from datasets import load_metric
 
@@ -23,10 +23,8 @@ question_column_name = "question"
 answer_column_name = "answer"
         
 def main(args):
-    # tokenizer = AutoTokenizer.from_pretrained(args.model)
-    # model = AutoModelForQuestionAnswering.from_pretrained(args.model)
-    tokenizer = AutoTokenizer.from_pretrained(args.ckpt_dir)
-    model = AutoModelForQuestionAnswering.from_pretrained(args.ckpt_dir)
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    model = AutoModelForQuestionAnswering.from_pretrained(args.model)
 
     # load dataset
     context, data = load_dataset(args)
@@ -36,8 +34,6 @@ def main(args):
     valid_features = QADataset(context, data["valid"], tokenizer, args.max_len, 'valid')
     valid_example = QADataset(context, data["valid"], tokenizer, args.max_len, 'valid', preprocess=False)
 
-    data_collator = DefaultDataCollator()
-
     training_args = TrainingArguments(
         output_dir=args.ckpt_dir,
         evaluation_strategy="epoch",
@@ -46,7 +42,7 @@ def main(args):
         per_device_eval_batch_size=args.batch_size,
         num_train_epochs=args.epoch,
         weight_decay=args.weight_decay,
-        # do_train=True
+        do_train=True
     )
     metric = load_metric("squad_v2")
 
@@ -61,7 +57,7 @@ def main(args):
         eval_dataset=valid_dataset,
         eval_examples=valid_example,
         tokenizer=tokenizer,
-        data_collator=data_collator,
+        data_collator=DataCollatorForQuestionAnswering(),
     )
 
     # Training
@@ -79,15 +75,15 @@ def main(args):
         trainer.save_metrics("train", metrics)
         trainer.save_state()
         
-    # Evaluation
-    if training_args.do_eval:
-        metrics = trainer.evaluate(eval_dataset=valid_features)
-        print(metrics)
-        # max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
-        # metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
+    # # Evaluation
+    # if training_args.do_eval:
+    #     metrics = trainer.evaluate(eval_dataset=valid_features)
+    #     print(metrics)
+    #     # max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
+    #     # metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
 
-        trainer.log_metrics("eval", metrics)
-        trainer.save_metrics("eval", metrics)
+    #     trainer.log_metrics("eval", metrics)
+    #     trainer.save_metrics("eval", metrics)
 
 
 def parse_args() -> Namespace:
