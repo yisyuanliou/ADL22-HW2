@@ -1,3 +1,4 @@
+import csv
 import torch
 import numpy as np
 from pathlib import Path
@@ -10,10 +11,10 @@ from transformers import (
     AutoModelForMultipleChoice,
     TrainingArguments, 
     Trainer, 
-    DefaultDataCollator, 
     EvalPrediction
 )
 from dataset import QADataset, contextDataset
+from datasets import load_metric
 from collate_fn import DataCollatorForMultipleChoice, DataCollatorForQuestionAnswering
 import torch
 from utils import load_dataset
@@ -22,22 +23,15 @@ from utils_qa import postprocess_qa_predictions
 question_column_name = "question"
 answer_column_name = "answer"
 
-# # Post-processing:
-def post_processing_function(examples, features, predictions, stage="eval"):
-    # Post-processing: we match the start logits and end logits to answers in the original context.
-    predictions = postprocess_qa_predictions(
-        examples=examples,
-        features=features,
-        predictions=predictions,
-        output_dir="./result",
-        prefix=stage,
-    )
-    # Format the result to the format the metric expects.
-    formatted_predictions = [{"id": k, "prediction_text": v} for k, v in predictions.items()]
+# Metric
+metric = load_metric("squad_v2")
+def compute_metrics(p: EvalPrediction):
+    print(p.predictions)
+    # print(p.predictions.shape)
+    # print(np.argmax(p.predictions, axis=1))
+    print(p.label_ids)
+    return metric.compute(predictions=p.predictions, references=p.label_ids)
 
-    references = [{"id": ex["id"], "answers": ex[answer_column_name]} for ex in examples]
-    return EvalPrediction(predictions=formatted_predictions, label_ids=references)
-        
 def main(args):
     # load dataset
     context, data = load_dataset(args)
@@ -48,8 +42,6 @@ def main(args):
 
     qa_tokenizer = AutoTokenizer.from_pretrained(args.qa_ckpt_dir)
     qa_model = AutoModelForQuestionAnswering.from_pretrained(args.qa_ckpt_dir)
-
-    data_collator = DefaultDataCollator()
 
     training_args = TrainingArguments(
         output_dir=args.result_dir,
@@ -73,9 +65,7 @@ def main(args):
         model=qa_model,
         args=training_args,
         tokenizer=qa_tokenizer,
-        # data_collator=data_collator,
         data_collator=DataCollatorForQuestionAnswering(),
-        post_process_function=post_processing_function,
     )
 
     if training_args.do_predict:
@@ -85,9 +75,19 @@ def main(args):
         print(preds)
 
         test_features = QADataset(context, data["test"], qa_tokenizer, args.max_len, 'test', relevant=preds)
-        test_examples = QADataset(context, data["test"], qa_tokenizer, args.max_len, 'test', preprocess=False)
-        results = qa_trainer.predict(test_features, test_examples)
-        print(results)
+        test_examples = QADataset(context, data["test"], qa_tokenizer, args.max_len, 'test', relevant=preds, preprocess=False)
+        results = qa_trainer.predict(test_features)
+        predictions = postprocess_qa_predictions(test_examples, test_features, results.predictions, qa_tokenizer)
+
+        preds_list = []
+        preds_list.append(['id', 'answer'])
+        for id, ans in predictions.items():
+            preds_list.append([id, ans])
+
+        # print(predictions)
+        with open(args.submission_csv, 'w', newline='') as f:
+            writer = csv.writer(f, delimiter=',')
+            writer.writerows(preds_list)
 
 
 def parse_args() -> Namespace:
@@ -115,6 +115,11 @@ def parse_args() -> Namespace:
         type=Path,
         help="Directory to the result.",
         default="./results/",
+    )
+    parser.add_argument(
+        "--submission_csv",
+        type=Path,
+        default="submission.csv",
     )
 
     # data

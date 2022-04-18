@@ -29,6 +29,9 @@ class QADataset(Dataset):
                 self.prepare_train_features()
             else:
                 self.prepare_validation_features(relevant)
+        else:
+            for idx, examples in enumerate(self.data):
+                examples["context"] = self.context[examples["paragraphs"][relevant[idx]]]
 
     # Training preprocessing
     def prepare_train_features(self):
