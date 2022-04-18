@@ -16,13 +16,14 @@ class DataCollatorForMultipleChoice:
     pad_to_multiple_of: Optional[int] = None
 
     def __call__(self, features):
+        features_cpy = features.copy()
         if self.split == "train":
             label_name = "labels"
-            labels = [feature[label_name] for feature in features]
-        batch_size = len(features)
-        num_choices = len(features[0]["input_ids"][0])
+            labels = [feature.pop(label_name) for feature in features_cpy]
+        batch_size = len(features_cpy)
+        num_choices = len(features_cpy[0]["input_ids"][0])
         flattened_features = [
-            [{k: v[0][i] for k, v in feature.items()} for i in range(num_choices)] for feature in features
+            [{k: v[0][i] for k, v in feature.items()} for i in range(num_choices)] for feature in features_cpy
         ]
         flattened_features = sum(flattened_features, [])
 

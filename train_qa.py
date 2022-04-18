@@ -10,7 +10,6 @@ from transformers import (
     AutoTokenizer, 
     AutoModelForQuestionAnswering, 
     TrainingArguments, 
-    Trainer, 
     DefaultDataCollator, 
     EvalPrediction
 )
@@ -19,30 +18,13 @@ from datasets import load_metric
 
 import torch
 from utils import load_dataset
-from utils_qa import postprocess_qa_predictions
 
 question_column_name = "question"
 answer_column_name = "answer"
-
-# # Post-processing:
-def post_processing_function(examples, features, predictions, stage="eval"):
-    # Post-processing: we match the start logits and end logits to answers in the original context.
-    predictions = postprocess_qa_predictions(
-        examples=examples,
-        features=features,
-        predictions=predictions,
-        output_dir="./result",
-        prefix=stage,
-    )
-    # Format the result to the format the metric expects.
-    formatted_predictions = [{"id": k, "prediction_text": v} for k, v in predictions.items()]
-
-    references = [{"id": ex["id"], "answers": ex[answer_column_name]} for ex in examples]
-    return EvalPrediction(predictions=formatted_predictions, label_ids=references)
         
 def main(args):
-    # tokenizer = AutoTokenizer.from_pretrained("bert-base-chinese")
-    # model = AutoModelForQuestionAnswering.from_pretrained("bert-base-chinese")
+    # tokenizer = AutoTokenizer.from_pretrained(args.model)
+    # model = AutoModelForQuestionAnswering.from_pretrained(args.model)
     tokenizer = AutoTokenizer.from_pretrained(args.ckpt_dir)
     model = AutoModelForQuestionAnswering.from_pretrained(args.ckpt_dir)
 
@@ -70,10 +52,6 @@ def main(args):
 
     # Metric
     def compute_metrics(p: EvalPrediction):
-        print(p.predictions)
-        # print(p.predictions.shape)
-        # print(np.argmax(p.predictions, axis=1))
-        print(p.label_ids)
         return metric.compute(predictions=p.predictions, references=p.label_ids)
 
     trainer = QuestionAnsweringTrainer(
@@ -84,8 +62,6 @@ def main(args):
         eval_examples=valid_example,
         tokenizer=tokenizer,
         data_collator=data_collator,
-        post_process_function=post_processing_function,
-        compute_metrics=compute_metrics,
     )
 
     # Training
@@ -132,7 +108,7 @@ def parse_args() -> Namespace:
         "-m", "--model",
         type=str,
         help="model name.",
-        default="model",
+        default="bert-base-chinese",
     )
 
     # data
@@ -141,17 +117,15 @@ def parse_args() -> Namespace:
     # optimizer
     parser.add_argument("--lr", type=float, default=3e-5)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
-    parser.add_argument("--epoch", type=float, default=3)
+    parser.add_argument("--epoch", type=float, default=2)
 
     # data loader
-    parser.add_argument("--batch_size", type=int, default=3)
+    parser.add_argument("--batch_size", type=int, default=2)
 
     # training
     parser.add_argument(
         "--device", type=torch.device, help="cpu, cuda, cuda:0, cuda:1", default="cuda:0"
     )
-    parser.add_argument("--num_epoch", type=int, default=100)
-
     args = parser.parse_args()
     return args
 

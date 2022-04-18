@@ -192,12 +192,7 @@ class contextDataset(Dataset):
         for examples in tqdm(self.data):
             # preprocess
             question_headers = [examples["question"] for j in range(4)]
-            # question_headers = [[context] * 4 for context in examples["sent1"]]
-            # sentences = [
-            #     [f"{question_headers} {self.context[p]}" for p in examples["paragraphs"]]
-            # ]
-            sentences = \
-                [self.context[p] for p in examples["paragraphs"]]
+            sentences = [self.context[p] for p in examples["paragraphs"]]
 
             tokenized_example = self.tokenizer(question_headers, sentences, padding=True, truncation=True, max_length=self.max_len)
             self.tokenized_examples.append({k: [v[i : i + 4] for i in range(0, len(v), 4)] for k, v in tokenized_example.items()})

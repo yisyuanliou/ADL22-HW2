@@ -16,21 +16,19 @@
 A subclass of `Trainer` specific to Question-Answering tasks
 """
 
-from transformers import Trainer
-from transformers.trainer_utils import PredictionOutput
+from transformers import Trainer, EvalPrediction
+from utils_qa import postprocess_qa_predictions
 
 
 class QuestionAnsweringTrainer(Trainer):
-    def __init__(self, *args, eval_examples=None, post_process_function=None, **kwargs):
+    def __init__(self, *args, eval_examples=None, **kwargs):
         super().__init__(*args, **kwargs)
         self.eval_examples = eval_examples
-        self.post_process_function = post_process_function
 
     def evaluate(self, eval_dataset=None, eval_examples=None, ignore_keys=None, metric_key_prefix: str = "eval"):
         eval_dataset = self.eval_dataset if eval_dataset is None else eval_dataset
         eval_dataloader = self.get_eval_dataloader(eval_dataset)
         eval_examples = self.eval_examples if eval_examples is None else eval_examples
-        # eval_examples = self.get_eval_dataloader(eval_dataset)
 
         # Temporarily disable metric computation, we will do it in the loop here.
         compute_metrics = self.compute_metrics
@@ -48,9 +46,13 @@ class QuestionAnsweringTrainer(Trainer):
         finally:
             self.compute_metrics = compute_metrics
 
-        if self.post_process_function is not None and self.compute_metrics is not None:
-            eval_preds = self.post_process_function(eval_examples, eval_dataset, output.predictions)
-            metrics = self.compute_metrics(eval_preds)
+        if self.compute_metrics is not None:
+            eval_preds = postprocess_qa_predictions(eval_examples, eval_dataset, output.predictions)
+            formatted_predictions = [{"id": k, "prediction_text": v} for k, v in eval_preds.items()]
+
+            references = [{"id": ex["id"], "answers": ex["answer"]} for ex in eval_examples]
+            preds = EvalPrediction(predictions=formatted_predictions, label_ids=references)
+            metrics = self.compute_metrics(preds)
 
             # Prefix all keys with metric_key_prefix + '_'
             for key in list(metrics.keys()):

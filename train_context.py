@@ -13,8 +13,8 @@ import torch
 from utils import load_dataset
 
 def main(args):
-    tokenizer = AutoTokenizer.from_pretrained("bert-base-chinese")
-    model = AutoModelForMultipleChoice.from_pretrained("bert-base-chinese")
+    tokenizer = AutoTokenizer.from_pretrained(args.model)
+    model = AutoModelForMultipleChoice.from_pretrained(args.model)
 
     # load dataset
     context, data = load_dataset(args)
@@ -57,7 +57,6 @@ def main(args):
         train_result = trainer.train(resume_from_checkpoint=checkpoint)
         trainer.save_model()  # Saves the tokenizer too for easy upload
         metrics = train_result.metrics
-        print(metrics)
 
         trainer.log_metrics("train", metrics)
         trainer.save_metrics("train", metrics)
@@ -92,7 +91,7 @@ def parse_args() -> Namespace:
         "-m", "--model",
         type=str,
         help="model name.",
-        default="model",
+        default="bert-base-chinese",
     )
 
     # data
@@ -101,10 +100,10 @@ def parse_args() -> Namespace:
     # optimizer
     parser.add_argument("--lr", type=float, default=5e-5)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
-    parser.add_argument("--epoch", type=float, default=3)
+    parser.add_argument("--epoch", type=float, default=2)
 
     # data loader
-    parser.add_argument("--batch_size", type=int, default=3)
+    parser.add_argument("--batch_size", type=int, default=2)
 
     # training
     parser.add_argument(
