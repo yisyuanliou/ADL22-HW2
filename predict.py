@@ -1,6 +1,4 @@
-import os
 import torch
-import json
 import numpy as np
 from pathlib import Path
 from argparse import ArgumentParser, Namespace
@@ -9,14 +7,14 @@ from trainer_qa import QuestionAnsweringTrainer
 from transformers import (
     AutoTokenizer, 
     AutoModelForQuestionAnswering, 
+    AutoModelForMultipleChoice,
     TrainingArguments, 
     Trainer, 
     DefaultDataCollator, 
     EvalPrediction
 )
-from dataset import QADataset
-from datasets import load_metric
-
+from dataset import QADataset, contextDataset
+from collate_fn import DataCollatorForMultipleChoice
 import torch
 from utils import load_dataset
 from utils_qa import postprocess_qa_predictions
@@ -41,77 +39,54 @@ def post_processing_function(examples, features, predictions, stage="eval"):
     return EvalPrediction(predictions=formatted_predictions, label_ids=references)
         
 def main(args):
-    # tokenizer = AutoTokenizer.from_pretrained("bert-base-chinese")
-    # model = AutoModelForQuestionAnswering.from_pretrained("bert-base-chinese")
-    tokenizer = AutoTokenizer.from_pretrained(args.ckpt_dir)
-    model = AutoModelForQuestionAnswering.from_pretrained(args.ckpt_dir)
-
     # load dataset
     context, data = load_dataset(args)
 
-    train_dataset  = QADataset(context, data["train"], tokenizer, args.max_len, 'train')
-    valid_dataset  = QADataset(context, data["valid"], tokenizer, args.max_len, 'train')
-    valid_features = QADataset(context, data["valid"], tokenizer, args.max_len, 'valid')
-    valid_example = QADataset(context, data["valid"], tokenizer, args.max_len, 'valid', preprocess=False)
+    context_tokenizer = AutoTokenizer.from_pretrained(args.context_ckpt_dir)
+    context_model = AutoModelForMultipleChoice.from_pretrained(args.context_ckpt_dir)
+    test_dataset = contextDataset(context, data["test"], context_tokenizer, args.max_len, 'test')
+
+    tokenizer = AutoTokenizer.from_pretrained(args.qa_ckpt_dir)
+    qa_model = AutoModelForQuestionAnswering.from_pretrained(args.qa_ckpt_dir)
 
     data_collator = DefaultDataCollator()
 
     training_args = TrainingArguments(
-        output_dir=args.ckpt_dir,
+        output_dir=args.result_dir,
         evaluation_strategy="epoch",
         learning_rate=args.lr,
         per_device_train_batch_size=args.batch_size,
         per_device_eval_batch_size=args.batch_size,
         num_train_epochs=args.epoch,
         weight_decay=args.weight_decay,
-        # do_train=True
+        do_predict=True
     )
-    metric = load_metric("squad_v2")
 
-    # Metric
-    def compute_metrics(p: EvalPrediction):
-        print(p.predictions)
-        # print(p.predictions.shape)
-        # print(np.argmax(p.predictions, axis=1))
-        print(p.label_ids)
-        return metric.compute(predictions=p.predictions, references=p.label_ids)
-
-    trainer = QuestionAnsweringTrainer(
-        model=model,
+    context_trainer = Trainer(
+        model=context_model,
         args=training_args,
-        train_dataset=train_dataset,
-        eval_dataset=valid_dataset,
-        eval_examples=valid_example,
+        tokenizer=context_tokenizer,
+        data_collator=DataCollatorForMultipleChoice(tokenizer=context_tokenizer, split="predict"),
+    )
+
+    qa_trainer = QuestionAnsweringTrainer(
+        model=qa_model,
+        args=training_args,
         tokenizer=tokenizer,
         data_collator=data_collator,
         post_process_function=post_processing_function,
-        compute_metrics=compute_metrics,
     )
 
-    # Training
-    if training_args.do_train:
-        checkpoint = None
-        if training_args.resume_from_checkpoint is not None:
-            print(training_args.resume_from_checkpoint)
-            checkpoint = training_args.resume_from_checkpoint
-        train_result = trainer.train(resume_from_checkpoint=checkpoint)
-        trainer.save_model()  # Saves the tokenizer too for easy upload
-        metrics = train_result.metrics
-        print(metrics)
+    if training_args.do_predict:
+        results = context_trainer.predict(test_dataset)
+        predictions = results.predictions
+        preds = np.argmax(predictions, axis=1)
+        print(preds)
 
-        trainer.log_metrics("train", metrics)
-        trainer.save_metrics("train", metrics)
-        trainer.save_state()
-        
-    # Evaluation
-    if training_args.do_eval:
-        metrics = trainer.evaluate(eval_dataset=valid_features)
-        print(metrics)
-        # max_eval_samples = data_args.max_eval_samples if data_args.max_eval_samples is not None else len(eval_dataset)
-        # metrics["eval_samples"] = min(max_eval_samples, len(eval_dataset))
-
-        trainer.log_metrics("eval", metrics)
-        trainer.save_metrics("eval", metrics)
+        test_features = QADataset(context, data["test"], tokenizer, args.max_len, 'test', relevant=preds)
+        test_examples = QADataset(context, data["test"], tokenizer, args.max_len, 'test', preprocess=False)
+        results = qa_trainer.predict(test_examples, test_features)
+        print(results)
 
 
 def parse_args() -> Namespace:
@@ -123,16 +98,22 @@ def parse_args() -> Namespace:
         default="./data/",
     )
     parser.add_argument(
-        "--ckpt_dir",
+        "--context_ckpt_dir",
         type=Path,
-        help="Directory to save the model file.",
+        help="Directory to load the model file.",
+        default="./ckpt/context/checkpoint-7000/",
+    )
+    parser.add_argument(
+        "--qa_ckpt_dir",
+        type=Path,
+        help="Directory to load the model file.",
         default="./ckpt/qa/",
     )
     parser.add_argument(
-        "-m", "--model",
-        type=str,
-        help="model name.",
-        default="model",
+        "--result_dir",
+        type=Path,
+        help="Directory to the result.",
+        default="./results/",
     )
 
     # data
@@ -150,7 +131,6 @@ def parse_args() -> Namespace:
     parser.add_argument(
         "--device", type=torch.device, help="cpu, cuda, cuda:0, cuda:1", default="cuda:0"
     )
-    parser.add_argument("--num_epoch", type=int, default=100)
 
     args = parser.parse_args()
     return args
@@ -158,5 +138,4 @@ def parse_args() -> Namespace:
 
 if __name__ == "__main__":
     args = parse_args()
-    args.ckpt_dir.mkdir(parents=True, exist_ok=True)
     main(args)

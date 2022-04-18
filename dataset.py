@@ -17,7 +17,7 @@ from torch.utils.data import Dataset
 }
 """
 class QADataset(Dataset):
-    def __init__(self, context, data, tokenizer, max_len, split, preprocess=True):
+    def __init__(self, context, data, tokenizer, max_len, split, relevant=None, preprocess=True):
         self.context = context
         self.data = data
         self.tokenizer = tokenizer
@@ -28,7 +28,7 @@ class QADataset(Dataset):
             if self.split == 'train':
                 self.prepare_train_features()
             else:
-                self.prepare_validation_features()
+                self.prepare_validation_features(relevant)
 
     # Training preprocessing
     def prepare_train_features(self):
@@ -107,17 +107,19 @@ class QADataset(Dataset):
                     # print(answers["text"])
                 self.inputs.append(tokenized_example)
 
-
-     # Validation preprocessing
-    
-    def prepare_validation_features(self):
+     # Validation preprocessing    
+    def prepare_validation_features(self, relevant=None):
         self.inputs = []
-        for examples in self.data:
+        for idx, examples in enumerate(self.data):
+            self.data[idx]["index"] = idx
             # Some of the questions have lots of whitespace on the left, which is not useful and will make the
             # truncation of the context fail (the tokenized question will take a lots of space). So we remove that
             # left whitespace
             examples['question'] = examples['question'].lstrip()
-            context = self.context[examples["relevant"]]
+            if relevant is None:
+                context = self.context[examples["relevant"]]
+            else:
+                context = self.context[examples["paragraphs"][relevant[idx]]]
 
             # Tokenize our examples with truncation and maybe padding, but keep the overflows using a stride. This results
             # in one example possible giving several features when a context is long, each of those features having a
@@ -127,7 +129,6 @@ class QADataset(Dataset):
                 context,
                 truncation="only_second",
                 max_length=self.max_len,
-                # stride=data_args.doc_stride,
                 return_overflowing_tokens=True,
                 return_offsets_mapping=True,
                 padding="max_length",
@@ -154,7 +155,7 @@ class QADataset(Dataset):
 
                 # One example can give several spans, this is the index of the example containing this span of text.
                 # sample_index = sample_mapping
-                tokenized_example["example_id"].append(examples["id"])
+                tokenized_example["example_id"].append(idx)
 
                 # Set to None the offset_mapping that are not part of the context so it's easy to determine if a token
                 # position is part of the context or not.
@@ -163,8 +164,6 @@ class QADataset(Dataset):
                     for k, o in enumerate(tokenized_examples["offset_mapping"][i])
                 ]
                 self.inputs.append(tokenized_example)
-                # self.inputs[-1]["id"] = examples["id"]
-                # self.inputs[-1]["context"] = context
 
     def __len__(self):
         if self.preprocess:
@@ -200,9 +199,8 @@ class contextDataset(Dataset):
 
             tokenized_example = self.tokenizer(question_headers, sentences, padding=True, truncation=True, max_length=self.max_len)
             self.tokenized_examples.append({k: [v[i : i + 4] for i in range(0, len(v), 4)] for k, v in tokenized_example.items()})
-            self.tokenized_examples[-1]["labels"] = examples["paragraphs"].index(examples["relevant"])
-            
-        # return {k: [v[i : i + 4] for i in range(0, len(v), 4)] for k, v in tokenized_examples.items()}
+            if split != 'test':
+                self.tokenized_examples[-1]["labels"] = examples["paragraphs"].index(examples["relevant"])
 
     def __len__(self) -> int:
         return len(self.tokenized_examples)
