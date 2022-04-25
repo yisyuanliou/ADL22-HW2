@@ -118,7 +118,7 @@ def parse_args() -> Namespace:
     parser.add_argument("--max_len", type=int, default=512)
 
     # optimizer
-    parser.add_argument("--lr", type=float, default=3e-5)
+    parser.add_argument("--lr", type=float, default=1e-5)
     parser.add_argument("--weight_decay", type=float, default=1e-4)
     parser.add_argument("--epoch", type=float, default=2)
 
