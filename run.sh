@@ -1,0 +1,1 @@
+python3.8 predict.py --context_dir "${1}" --test_dir "${2}" --submission_csv "${3}"

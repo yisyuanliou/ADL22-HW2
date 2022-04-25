@@ -25,6 +25,13 @@ answer_column_name = "answer"
 def main(args):
     tokenizer = AutoTokenizer.from_pretrained(args.model)
     model = AutoModelForQuestionAnswering.from_pretrained(args.model)
+    if args.no_pretrain:
+        model.config.__dict__["num_hidden_layers"] = 4
+        model.config.__dict__["hidden_size"] = 256
+        model.config.__dict__["num_attention_heads"] = 4
+        model.config.__dict__["pooler_num_attention_heads"] = 4
+        model = AutoModelForQuestionAnswering.from_config(model.config)
+        print(model.config)
 
     # load dataset
     context, data = load_dataset(args)
@@ -122,6 +129,7 @@ def parse_args() -> Namespace:
     parser.add_argument(
         "--device", type=torch.device, help="cpu, cuda, cuda:0, cuda:1", default="cuda:0"
     )
+    parser.add_argument("--no_pretrain", action='store_true')
     args = parser.parse_args()
     return args
 

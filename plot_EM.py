@@ -5,6 +5,7 @@ import torch
 import numpy as np
 from pathlib import Path
 from argparse import ArgumentParser, Namespace
+import matplotlib.pyplot as plt
 
 from trainer_qa import QuestionAnsweringTrainer
 from transformers import (
@@ -21,6 +22,7 @@ from utils_qa import postprocess_qa_predictions
 
 question_column_name = "question"
 answer_column_name = "answer"
+SPLIT="eval"
 
 def load_dataset(args):
     context_data_path = os.path.join(args.context_dir)
@@ -28,9 +30,9 @@ def load_dataset(args):
         context = json.load(f)
     
     data = {}
-    data_paths = os.path.join(args.test_dir)
+    data_paths = os.path.join(args.eval_dir)
     with  open(data_paths, 'r', encoding="utf-8") as f:
-        data["test"] = json.load(f)
+        data[SPLIT] = json.load(f)
     return context, data
 
 def main(args):
@@ -39,10 +41,9 @@ def main(args):
 
     context_tokenizer = AutoTokenizer.from_pretrained(args.context_ckpt_dir)
     context_model = AutoModelForMultipleChoice.from_pretrained(args.context_ckpt_dir)
-    test_dataset = contextDataset(context, data["test"], context_tokenizer, args.max_len, 'test')
+    eval_dataset = contextDataset(context, data[SPLIT], context_tokenizer, args.max_len, SPLIT)
 
     qa_tokenizer = AutoTokenizer.from_pretrained(args.qa_ckpt_dir)
-    qa_model = AutoModelForQuestionAnswering.from_pretrained(args.qa_ckpt_dir)
 
     training_args = TrainingArguments(
         output_dir=args.result_dir,
@@ -59,37 +60,57 @@ def main(args):
         model=context_model,
         args=training_args,
         tokenizer=context_tokenizer,
-        data_collator=DataCollatorForMultipleChoice(tokenizer=context_tokenizer, split="predict"),
-    )
-
-    qa_trainer = QuestionAnsweringTrainer(
-        model=qa_model,
-        args=training_args,
-        tokenizer=qa_tokenizer,
-        data_collator=DataCollatorForQuestionAnswering(),
+        data_collator=DataCollatorForMultipleChoice(tokenizer=context_tokenizer, split="train"),
     )
 
     if training_args.do_predict:
-        results = context_trainer.predict(test_dataset)
+        results = context_trainer.predict(eval_dataset)
         predictions = results.predictions
         preds = np.argmax(predictions, axis=1)
         print(preds)
 
-        test_features = QADataset(context, data["test"], qa_tokenizer, args.max_len, 'test', relevant=preds)
-        test_examples = QADataset(context, data["test"], qa_tokenizer, args.max_len, 'test', relevant=preds, preprocess=False)
-        results = qa_trainer.predict(test_features)
-        predictions = postprocess_qa_predictions(test_examples, test_features, results.predictions, qa_tokenizer)
+    eval_features = QADataset(context, data[SPLIT], qa_tokenizer, args.max_len, SPLIT, relevant=preds)
+    eval_examples = QADataset(context, data[SPLIT], qa_tokenizer, args.max_len, SPLIT, relevant=preds, preprocess=False)
 
-        preds_list = []
-        preds_list.append(['id', 'answer'])
-        for id, ans in predictions.items():
-            preds_list.append([id, ans])
+    EM_data = []
+    for i in range(500, 22000, 3000):
+        ckpt_path = os.path.join(args.qa_ckpt_dir, "checkpoint-"+str(i))
+        qa_model = AutoModelForQuestionAnswering.from_pretrained(ckpt_path)
+        qa_trainer = QuestionAnsweringTrainer(
+            model=qa_model,
+            args=training_args,
+            tokenizer=qa_tokenizer,
+            data_collator=DataCollatorForQuestionAnswering(),
+        )
 
-        # print(predictions)
-        with open(args.submission_csv, 'w', newline='') as f:
-            writer = csv.writer(f, delimiter=',')
-            writer.writerows(preds_list)
+        if training_args.do_predict:
+            results = qa_trainer.predict(eval_features)
+            predictions = postprocess_qa_predictions(eval_examples, eval_features, results.predictions, qa_tokenizer)
 
+            preds_list = []
+            preds_list.append(["id", "answer"])
+            EM = 0
+            for i, (id, ans) in enumerate(predictions.items()):
+                preds_list.append([id, ans])
+                if i < 5:
+                    print(ans, eval_examples[i]["answer"]["text"])
+                EM += (ans == eval_examples[i]["answer"]["text"])
+        print("EM", EM / len(eval_examples))
+        EM_data.append(EM / len(eval_examples))
+
+    plt.plot(
+        list(range(500, 22000, 3000)),
+        EM_data,
+        color="orange",
+        label="valid",
+    )
+    plt.title("learning curve")
+    plt.xlabel("steps")
+    plt.ylabel("EM")
+    plt.legend()
+    plt.savefig('EM_curve_{SPLIT}.png')
+            
+            
 
 def parse_args() -> Namespace:
     parser = ArgumentParser()
@@ -100,33 +121,28 @@ def parse_args() -> Namespace:
         default="./data/context.json",
     )
     parser.add_argument(
-        "--test_dir",
+        "--eval_dir",
         type=Path,
         help="Directory to the dataset.",
-        default="./data/test.json",
+        default="./data/valid.json",
     )
     parser.add_argument(
         "--context_ckpt_dir",
         type=Path,
         help="Directory to load the model file.",
-        default="./albert/",
+        default="./ckpt/context/albert2/",
     )
     parser.add_argument(
         "--qa_ckpt_dir",
         type=Path,
         help="Directory to load the model file.",
-        default="./macbert/",
+        default="./ckpt/qa/macbert/",
     )
     parser.add_argument(
         "--result_dir",
         type=Path,
         help="Directory to the result.",
         default="./results/",
-    )
-    parser.add_argument(
-        "--submission_csv",
-        type=Path,
-        default="submission.csv",
     )
 
     # data

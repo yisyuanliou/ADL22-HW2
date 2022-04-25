@@ -1,21 +1,6 @@
 from tqdm import tqdm
 from torch.utils.data import Dataset
 
-"""
-"id": "593f14f960d971e294af884f0194b3a7",
-"question": "舍本和誰的數據能推算出連星的恆星的質量？",
-"paragraphs": [
-    2018,
-    6952,
-    8264,
-    836
-],
-"relevant": 836,
-"answer": {
-    "text": "斯特魯維",
-    "start": 108
-}
-"""
 class QADataset(Dataset):
     def __init__(self, context, data, tokenizer, max_len, split, relevant=None, preprocess=True):
         self.context = context
