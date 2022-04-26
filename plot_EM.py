@@ -22,7 +22,7 @@ from utils_qa import postprocess_qa_predictions
 
 question_column_name = "question"
 answer_column_name = "answer"
-SPLIT="eval"
+SPLIT = "eval"
 
 def load_dataset(args):
     context_data_path = os.path.join(args.context_dir)
@@ -73,7 +73,7 @@ def main(args):
     eval_examples = QADataset(context, data[SPLIT], qa_tokenizer, args.max_len, SPLIT, relevant=preds, preprocess=False)
 
     EM_data = []
-    for i in range(500, 22000, 3000):
+    for i in range(args.start_ckpt, args.end_ckpt, args.period):
         ckpt_path = os.path.join(args.qa_ckpt_dir, "checkpoint-"+str(i))
         qa_model = AutoModelForQuestionAnswering.from_pretrained(ckpt_path)
         qa_trainer = QuestionAnsweringTrainer(
@@ -99,7 +99,7 @@ def main(args):
         EM_data.append(EM / len(eval_examples))
 
     plt.plot(
-        list(range(500, 22000, 3000)),
+        list(range(args.start_ckpt, args.end_ckpt, args.period)),
         EM_data,
         color="orange",
         label="valid",
@@ -108,7 +108,7 @@ def main(args):
     plt.xlabel("steps")
     plt.ylabel("EM")
     plt.legend()
-    plt.savefig('EM_curve_{SPLIT}.png')
+    plt.savefig("EM_curve_"+SPLIT+".png")
             
             
 
@@ -160,6 +160,10 @@ def parse_args() -> Namespace:
     parser.add_argument(
         "--device", type=torch.device, help="cpu, cuda, cuda:0, cuda:1", default="cuda:0"
     )
+
+    parser.add_argument("--start_ckpt", type=int, default=500)
+    parser.add_argument("--end_ckpt", type=int, default=22000)
+    parser.add_argument("--period", type=int, default=3000)
 
     args = parser.parse_args()
     return args
